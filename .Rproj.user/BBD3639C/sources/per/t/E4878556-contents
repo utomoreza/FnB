@@ -110,6 +110,14 @@ TSstudio::plot_forecast(forecast_holt) #, title = "Model Complex Seasonality")
 ```
 
 ```{r}
+TSstudio::test_forecast(actual = fnb_ts, forecast.obj = forecast_holt,
+                        train = train, test = validation)
+```
 
+```{r}
+model_arima <- forecast::auto.arima(train)
+forecast_arima <- forecast::forecast(model_arima, h = length(validation))
+TSstudio::plot_forecast(forecast_arima)
+MLmetrics::MAE(y_pred = forecast_arima$mean, y_true = validation)
 ```
 
