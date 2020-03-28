@@ -1,0 +1,2 @@
+"0","fnb <- fnb %>% select(transaction_date, receipt_number)"
+"0","fnb$transaction_date <- ymd_hms(fnb$transaction_date)"

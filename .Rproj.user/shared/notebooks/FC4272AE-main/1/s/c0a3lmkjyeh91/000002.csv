@@ -1,0 +1,22 @@
+"0","model_holt<- HoltWinters(train, seasonal = ""additive"")"
+"0","forecast_holt <- forecast::forecast(model_holt, h = 24 * 7)"
+"0","MLmetrics::MAE(y_pred = forecast_holt$mean, y_true = validation)"
+"1","[1]"
+"1"," 4.346336"
+"1","
+"
+"0","TSstudio::plot_forecast(forecast_holt) #, title = ""Model Complex Seasonality"")"
+"2","Registered S3 method overwritten by 'data.table':
+  method           from
+  print.data.table     
+"
+"2","Registered S3 methods overwritten by 'htmltools':
+  method               from         
+  print.html           tools:rstudio
+  print.shiny.tag      tools:rstudio
+  print.shiny.tag.list tools:rstudio
+"
+"2","Registered S3 method overwritten by 'htmlwidgets':
+  method           from         
+  print.htmlwidget tools:rstudio
+"

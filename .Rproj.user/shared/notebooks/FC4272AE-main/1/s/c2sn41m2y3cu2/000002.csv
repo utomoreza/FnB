@@ -1,0 +1,3 @@
+"0","# split train-validation 1 seasonal"
+"0","train <- head(fnb_ts, length(fnb_ts) - 24 * 7)"
+"0","validation <- tail(fnb_ts, 24 * 7)"
