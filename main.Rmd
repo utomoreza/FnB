@@ -46,10 +46,10 @@ Here, we are asked to make a report of forecasting result and seasonality explan
 
 ## Objectives
 
-+ %To aggregate the dataset in order to obtain `visitor` feature.
-+ %To round `time` feature in respective hour.
-+ %To perform time series padding for incomplete time series.
-+ %To replace missing values in time series with more meaningful values.
++ To aggregate the dataset in order to obtain `visitor` feature.
++ To round `time` feature in respective hour.
++ To perform time series padding for incomplete time series.
++ To replace missing values in time series with more meaningful values.
 + To create time series object.
 + To decompose the time series object into trend, sesonality, and residual.
 + To visualize the observed seasonality.
@@ -307,22 +307,9 @@ Now, let's check whether autocorrelation exists. We can use the `Box.test()` fun
 
 ```{r}
 Box.test(fnb_dec$random)
-
-diff(fnb_ts, lag = 2, differences = 9) %>% decompose(type = "additive") %>% 
-  autoplot()
-
-autoplot(diff(fnb_msts_dec[,5], lag = 2, differences = 3))
-
-aa <- diff(fnb_msts, lag = 2, differences = 4) %>% mstl()
-Box.test(aa[,4])
 ```
 
-The p-value is too far from our expectation. It means that our 
-
-```{r}
-
-```
-
+The p-value is too far from our expectation. Then, let's check the stationarity.
 
 ```{r}
 adf.test(x = fnb_ts)
@@ -431,41 +418,42 @@ test_forecast(actual = fnb_msts, forecast.obj = forecast_holt2,
 
 The Holt Winters model with multiple seasonality seems perform better. Its plot also show significance enhancement compared to when it only applies one seasonality.
 
-Now, let's create the ARIMA/SARIMA model for multiple seasonalities.
+## Compare All Models
+
+We have four models so far. Let's compare them in term of MAE.
 
 ```{r}
-model_arima2 <- auto.arima(train_2)
+data.frame(Model = c("HoltWinters one seasonal",
+                     "ets one seasonal",
+                     "SARIMA one seasonal",
+                     "HoltWinters two seasonal"),
+           MAE = c(MAEoneHolt,
+                   MAEoneETS,
+                   MAEoneARIMA,
+                   MAEtwoHolt))
 ```
 
-Then, let's see the model's summary.
+It can be seen that the model using `HoltWinters()` function with two seasonality is superior among others. Therefore, we're going to use this model as our final model. Then, let's develop our final model by training it using all available train data. Afterwards, we will forecast the test dataset.
 
 ```{r}
-summary(model_arima2)
+model_final <- HoltWinters(fnb_msts, seasonal = "additive")
+forecast_test <- forecast(model_final, h = 24*7)
 ```
 
-```{r}
-forecast_arima2 <- forecast(model_arima, h = length(validation))
-MAEoneARIMA <- MAE(y_pred = forecast_arima$mean, y_true = validation)
-MAEoneARIMA
-plot_forecast(forecast_arima)
-# ARIMA(2,0,2)(0,1,0)[168]
-test_forecast(actual = fnb_ts, forecast.obj = forecast_arima,
-                        train = train, test = validation)
-```
-
-
-###### Test dataset using one seasonal
+Now, let's fill in the test dataset. Firstly, let's take a quick look at it.
 
 ```{r}
 fnb_test <- read.csv("data/data-test.csv")
+fnb_test
+```
 
+It can be seen from the data frame above that the test dataset only contains time series from 10 AM to 10 PM every day. Therefore, we have to assign our forecasted data so that it can fit the test dataset.
 
-model_ready <- HoltWinters(fnb_ts, seasonal = "additive")
-forecast_test <- forecast::forecast(model_ready, h = 24*7)
+```{r}
+OpenTimeIdx <- grep("^10$", (rep(0:23, 7))) # create the index for each 10 AM every day
+CloseTimeIdx <- grep("^22$", (rep(0:23, 7))) # create the index for each 10 PM every day
 
-OpenTimeIdx <- grep("^10$", (rep(0:23, 7)))
-CloseTimeIdx <- grep("^22$", (rep(0:23, 7)))
-
+# create new column as visitor column by filtering using the indices defined above
 testOutput <- forecast_test$mean[c(OpenTimeIdx[1]:CloseTimeIdx[1],
   OpenTimeIdx[2]:CloseTimeIdx[2],
   OpenTimeIdx[3]:CloseTimeIdx[3],
@@ -474,102 +462,16 @@ testOutput <- forecast_test$mean[c(OpenTimeIdx[1]:CloseTimeIdx[1],
   OpenTimeIdx[6]:CloseTimeIdx[6],
   OpenTimeIdx[7]:CloseTimeIdx[7])]
 
-fnb_test$visitor <- testOutput
-write.csv(fnb_test, file = "data/testOutput.csv")
+fnb_test$visitor <- testOutput # fill in the visitor column
+write.csv(fnb_test, file = "data/testFinal.csv") # save the dataset as csv
 ```
 
-```{r}
+After the dataset above examined in the leaderboard, below is the result.
 
-```
+![](Capture.PNG)
 
-################## test dataset using 2 seasonal
+Its MAE is 5.64 and RMSE is 7.71
 
-```{r}
-model_ready <- HoltWinters(fnb_msts)
-forecast_test <- forecast::forecast(model_ready, h = 24*7)
+# Conclusions
 
-OpenTimeIdx <- grep("^10$", (rep(0:23, 7)))
-CloseTimeIdx <- grep("^22$", (rep(0:23, 7)))
-
-testOutput <- forecast_test$mean[c(OpenTimeIdx[1]:CloseTimeIdx[1],
-  OpenTimeIdx[2]:CloseTimeIdx[2],
-  OpenTimeIdx[3]:CloseTimeIdx[3],
-  OpenTimeIdx[4]:CloseTimeIdx[4],
-  OpenTimeIdx[5]:CloseTimeIdx[5],
-  OpenTimeIdx[6]:CloseTimeIdx[6],
-  OpenTimeIdx[7]:CloseTimeIdx[7])]
-
-fnb_test$visitor <- testOutput
-write.csv(fnb_test, file = "data/testOutput2Season.csv")
-```
-
-```{r}
-model_ready <- forecast::auto.arima(fnb_msts)
-forecast_test <- forecast::forecast(model_ready, h = 24*7)
-modelSarimaTest <- model_ready
-
-testOutput <- forecast_test$mean[c(OpenTimeIdx[1]:CloseTimeIdx[1],
-  OpenTimeIdx[2]:CloseTimeIdx[2],
-  OpenTimeIdx[3]:CloseTimeIdx[3],
-  OpenTimeIdx[4]:CloseTimeIdx[4],
-  OpenTimeIdx[5]:CloseTimeIdx[5],
-  OpenTimeIdx[6]:CloseTimeIdx[6],
-  OpenTimeIdx[7]:CloseTimeIdx[7])]
-
-fnb_test$visitor <- testOutput
-write.csv(fnb_test, file = "data/testOutputSarima.csv")
-```
-
-```{r}
-summary(modelSarimaTest)
-```
-
-################
-
-```{r}
-OpenTimeIdx <- grep("^10$", (rep(0:23, 7)))
-CloseTimeIdx <- grep("^22$", (rep(0:23, 7)))
-```
-
-
-################
-
-```{r}
-one <- read.csv("data/testOutput.csv")
-two <- read.csv("data/testOutput2Season.csv")
-three <- read.csv("data/testOutputArima.csv")
-four <- read.csv("data/testOutputTBATS.csv")
-
-p1 <- data.frame(datetime = ymd_hms(one$datetime), cbind(one = one$visitor, two = two$visitor, three = three$visitor, four = four$visitor)) %>% 
-  ggplot(aes(datetime)) +
-  geom_line(aes(y = one), color = "blue") +
-  geom_line(aes(y = two), color = "red") +
-  geom_line(aes(y = three), color = "green") +
-  geom_line(aes(y = four), color = "black")
-
-plotly::ggplotly(p1)
-```
-
-##################
-
-```{r}
-tbats_mod <- fnb_msts %>%
-            forecast::tbats(use.box.cox = FALSE, 
-                            use.trend = TRUE, 
-                            use.damped.trend = TRUE)
-tbats_fore <-  forecast::forecast(tbats_mod,h=24*7)
-
-testOutput <- tbats_fore$mean[c(OpenTimeIdx[1]:CloseTimeIdx[1],
-  OpenTimeIdx[2]:CloseTimeIdx[2],
-  OpenTimeIdx[3]:CloseTimeIdx[3],
-  OpenTimeIdx[4]:CloseTimeIdx[4],
-  OpenTimeIdx[5]:CloseTimeIdx[5],
-  OpenTimeIdx[6]:CloseTimeIdx[6],
-  OpenTimeIdx[7]:CloseTimeIdx[7])]
-
-fnb_test$visitor <- testOutput
-write.csv(fnb_test, file = "data/testOutputTBATS.csv")
-```
-
-
-
+We have prepared the train dataset for time series analysis. Time series padding approach also has been implemented. The dataset and its time series have been explored. The assumptions also have been examined while autocorrelation cannot be achieved. Two types of seasonality are implemented, i.e. single seasonal and multiple seasonal. Two types of model are used, i.e. triple exponential smoothing and ARIMA/SARIMA. The results show that triple exponential smoothing (using Holt Winters) perform the best. Using the final model, it can forecast the test dataset with MAE 5.64.
