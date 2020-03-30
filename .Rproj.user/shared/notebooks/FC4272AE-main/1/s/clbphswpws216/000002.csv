@@ -1,4 +1,0 @@
-"0","model_arima <- forecast::auto.arima(train)
-"
-"2","
-"
