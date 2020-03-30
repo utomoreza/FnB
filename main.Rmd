@@ -46,10 +46,10 @@ Here, we are asked to make a report of forecasting result and seasonality explan
 
 ## Objectives
 
-+ To aggregate the dataset in order to obtain `visitor` feature.
-+ To round `time` feature in respective hour.
-+ To perform time series padding for incomplete time series.
-+ To replace missing values in time series with more meaningful values.
++ %To aggregate the dataset in order to obtain `visitor` feature.
++ %To round `time` feature in respective hour.
++ %To perform time series padding for incomplete time series.
++ %To replace missing values in time series with more meaningful values.
 + To create time series object.
 + To decompose the time series object into trend, sesonality, and residual.
 + To visualize the observed seasonality.
@@ -152,30 +152,105 @@ There are 676 missing values in the `visitor` column. This is unsurprised result
 ```{r}
 fnb_pad$visitor <- replace_na(fnb_pad$visitor, 0)
 fnb_pad
+is.na(fnb_pad) %>% colSums()
 ```
 
+All NAs have been changed to 0 value. All clean. The dataset now is ready for exploratory data analysis.
 
+# Exploratory Data Analysis {#eda}
 
+## Visualize the Dataset
+
+In this chapter, we're going to explore and understand more the dataset. We could do that by visualizing its distribution of number of visitors in every hour and day. To do that, firstly, we need to make two new columns, i.e. hour and day columns.
 
 ```{r}
-fnb_pad$date <- ymd(paste(year(fnb_pad$transaction_date),
-                      month(fnb_pad$transaction_date), 
-                      day(fnb_pad$transaction_date), 
-                      sep = "-"))
-fnb_pad$time <- hms(paste(hour(fnb_pad$transaction_date), 0, 0, sep = ":"))
-
-fnb_pad$day <- wday(x = fnb_pad$transaction_date, label = T, abbr = F)
+fnb_pad$hour <- hour(fnb_pad$transaction_date) # create the hour column
+fnb_pad$day <- wday(x = fnb_pad$transaction_date, label = T, abbr = F) # create the day column
+fnb_pad
 ```
 
+By using just created columns and the `visitor` column, we can plot the distribution of the dataset as shown below. We also could utilize the `ggplotly` function from the `plotly` library in order to make the plot interactive.
+
 ```{r}
-fnb_pad %>% ggplot(aes(x = hour(time), y = visitor)) +
-  geom_col(aes(fill = day)) +
-  theme_minimal() +
-  labs(title = "Number of visitors",
-       x = "Hour",
+plotly::ggplotly(fnb_pad %>% ggplot(aes(x = hour, y = visitor)) +
+                   geom_col(aes(fill = day)) +
+                   theme_minimal() +
+                   labs(title = "Number of visitors",
+                        x = "Hour",
+                        y = "Number of visitors",
+                        fill = "Day"))
+```
+
+As shown in the plot above, at a glance, it can be seen that between 2 AM and 9 AM, there is no visitor. However, as mentioned earlier in the [Preparation](#prep) section, exactly in the part before implementing time series padding, there exist a day which starts at 9 AM. Therefore, if we zoom in the plot above to the part between 9 AM and 10 AM, a day which starts at 9 AM can be seen. Uniquely, such a day only has one visitor.
+
+In addition, the plot above also indicates that the nighter a day, the more the visitors come. Nevertheless, this phenomenon only applies from the opening time to 8 PM since after 8 PM, the number of visitors gradually decreases. 
+
+For the proportion of the number of visitors, it is approximately balanced among each day of week. However, to make it clear, let's compare each day of week by using boxplots.
+
+```{r}
+fnb_pad %>% ggplot(aes(x = day,
+                       y = visitor)) +
+  geom_boxplot(fill = "green") +
+  geom_jitter(aes(color = hour)) +
+  labs(title = "Boxplots of each day",
+       x = "Day",
        y = "Number of visitors",
-       fill = "Day")
+       color = "Hour")
 ```
+
+From the boxplots above, it can be seen that weekend (Saturday and Sunday) relatively has more visitors than weekday. It is clear that the median of Saturday and Sunday is higher than that of weekday. From Monday to Thurday, their median is relatively the same. However, something weird happens when we see the median of Friday. Such day has the least median value while its distribution is wider than other weekdays. This indicates that Friday tends to form random pattern.
+
+## Visualize the Time Series Object
+
+```{r}
+fnb_ts <- ts(data = fnb_pad$visitor, frequency = 24)
+autoplot(fnb_ts)
+```
+
+```{r}
+fnb_dec <- decompose(x = fnb_ts, type = "additive")
+fnb_dec %>% autoplot()
+```
+
+```{r}
+fnb_pad %>% 
+  mutate(seasonal = fnb_dec$seasonal,
+         hour = hour(time)) %>% 
+  distinct(hour, seasonal) %>% 
+  ggplot(mapping = aes(x = hour, y = seasonal)) +
+  geom_col() +
+  scale_x_continuous(breaks = seq(0,24,1)) +
+  labs(title = "Seasonality Pattern Analysis",
+       subtitle = "Daily")
+```
+
+```{r}
+msts(data = fnb_pad$visitor, seasonal.periods = c(24, 24*7)) %>% 
+  mstl() %>% 
+  autoplot()
+
+fnb_msts <- msts(data = fnb_pad$visitor, seasonal.periods = c(24, 24*7))
+fnb_msts_dec <- mstl(fnb_msts)
+```
+
+
+```{r}
+# double seasonal
+
+as.data.frame(fnb_msts_dec) %>% 
+  mutate(day = fnb_pad$day,
+         hour = as.factor(hour(fnb_pad$time))) %>% 
+  group_by(day, hour) %>% 
+  summarise(seasonal = sum(Seasonal24 + Seasonal168)) %>% 
+  ggplot(mapping = aes(x = hour, y = seasonal)) +
+  geom_col(aes(fill = day)) +
+  scale_fill_viridis_d(option = "plasma") +
+  labs(
+    title = "Seasonality Pattern Analysis",
+    subtitle = "Daily and Weekly"
+  )
+```
+
 
 # Modelling
 
