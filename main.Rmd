@@ -159,7 +159,7 @@ All NAs have been changed to 0 value. All clean. The dataset now is ready for ex
 
 # Exploratory Data Analysis {#eda}
 
-## Visualize the Dataset
+## Visualize the Dataset {#vizdata}
 
 In this chapter, we're going to explore and understand more the dataset. We could do that by visualizing its distribution of number of visitors in every hour and day. To do that, firstly, we need to make two new columns, i.e. hour and day columns.
 
@@ -200,82 +200,135 @@ fnb_pad %>% ggplot(aes(x = day,
 
 From the boxplots above, it can be seen that weekend (Saturday and Sunday) relatively has more visitors than weekday. It is clear that the median of Saturday and Sunday is higher than that of weekday. From Monday to Thurday, their median is relatively the same. However, something weird happens when we see the median of Friday. Such day has the least median value while its distribution is wider than other weekdays. This indicates that Friday tends to form random pattern.
 
-## Visualize the Time Series Object
+## Visualize the Time Series Object (1 Seasonal) {#1seas}
+
+Subsequently, we're going to visualize the dataset in time series object. To do this, first of all, we need to create a time series object by using the `ts()` function. The column in interest is the `visitor` column. Since the dataset is in hourly observations, we can set the `frequency` parameter to 24 (i.e. 24 hours) to become a single day. Then, let's plot the time series object.
 
 ```{r}
 fnb_ts <- ts(data = fnb_pad$visitor, frequency = 24)
 autoplot(fnb_ts)
 ```
 
-```{r}
+After the time series object created, now let's decompose it to see its composition (i.e. sesonality, trend, and residual/remainder) by using the `decompose()` function. Then, let's plot the decomposed time series object.
+
+```{r warning=FALSE}
 fnb_dec <- decompose(x = fnb_ts, type = "additive")
 fnb_dec %>% autoplot()
 ```
 
+It can be seen above that the trend still has patterns. This implicitly indicates that the time series object has more than one seasonality. We will cope with this issue little bit later. For now, just move on using 24-hour seasonal. Now, let's plot the seasonality.
+
 ```{r}
 fnb_pad %>% 
-  mutate(seasonal = fnb_dec$seasonal,
-         hour = hour(time)) %>% 
-  distinct(hour, seasonal) %>% 
+  mutate(seasonal = fnb_dec$seasonal) %>% # create the seasonal column from decomposed ts object
+  distinct(hour, seasonal) %>% # only show the unique values
   ggplot(mapping = aes(x = hour, y = seasonal)) +
   geom_col() +
   scale_x_continuous(breaks = seq(0,24,1)) +
   labs(title = "Seasonality Pattern Analysis",
-       subtitle = "Daily")
+       subtitle = "Hourly") +
+  theme(axis.text.y = element_blank()) # we're not interested in seasonal values
 ```
+
+The plot above shows the seasonality of 24 hours. Here, we only use one seasonality, i.e. from hours to day. Since the seasonality values in y-axis are uninterpretable, we're not interested to show the values. We're only interested in the bar changes. One thing that can be interpreted from the plot above is that every day the seasonality indicates a cycle. From 0 AM, there is significant decrease, and the values remain stable from 2 AM to 9 AM (although 9 AM shows a slight increase). From 10 AM to 8 PM, the values keep increase, whereas the values decrease afterwards. What the seasonality shows us is similar to what we've found in the [dataset visualization](#vizdata) above.
+
+## Visualize the Time Series Object (2 Seasonals)
+
+Next, as we've discovered earlier that, by using one seasonality, the trend still has patterns, it is recommended to add more seasonality to the time series object. Since our first seasonality is in hourly to day, now our second seasonality will be in daily to weekly, namely 24 hours to 7 days (i.e. 24 x 7).
+
+The `msts()` function from the `forecast` library can be used to catch more than one seasonality. As now our seasonalities are in hourly to daily and daily to weekly (i.e. 24 and 24 x 7, respectively), we can set the `seasonal.periods` parameter for the function as 24 and 24 x 7. Then, in order to decompose the multiple seasonality, instead of using the `decompose()` function, we're going to use the `mstl()` function from the `forecast` library as well. After the decomposed multiple seasonality time series object created, we can plot it.
 
 ```{r}
 msts(data = fnb_pad$visitor, seasonal.periods = c(24, 24*7)) %>% 
-  mstl() %>% 
-  autoplot()
+  mstl() %>% # decompose the multiple seasonality time series object
+  autoplot() # plot the decomposed one
 
-fnb_msts <- msts(data = fnb_pad$visitor, seasonal.periods = c(24, 24*7))
-fnb_msts_dec <- mstl(fnb_msts)
+fnb_msts <- msts(data = fnb_pad$visitor, seasonal.periods = c(24, 24*7)) # save time series object
+fnb_msts_dec <- mstl(fnb_msts) # save the decomposed one
 ```
 
+By using the time series object with two seasonality, we're going to plot the first seasonality. We can do that by executing below codes.
 
 ```{r}
-# double seasonal
+as.data.frame(fnb_msts_dec) %>% # change data type to dataframe as ggplot only accepts dataframe
+  mutate(hour = fnb_pad$hour) %>% # create the hour column
+  ggplot(mapping = aes(x = hour, y = Seasonal24)) + # Seasonal24 contains 1st seasonal
+  geom_col() +
+  labs(title = "Seasonality Pattern Analysis",
+    subtitle = "Hourly") +
+  theme(axis.text.y = element_blank()) # we're not interested in seasonal values
+```
 
-as.data.frame(fnb_msts_dec) %>% 
-  mutate(day = fnb_pad$day,
-         hour = as.factor(hour(fnb_pad$time))) %>% 
-  group_by(day, hour) %>% 
-  summarise(seasonal = sum(Seasonal24 + Seasonal168)) %>% 
+The plot above exactly shows the same results as the [plot](#1seas) of time series object with only one seasonality. Therefore, the interpretation of the plot is also the same.
+
+Subsequently, let's plot the second seasonality.
+
+```{r}
+as.data.frame(fnb_msts_dec) %>% # change data type to dataframe as ggplot only accepts dataframe
+  mutate(day = fnb_pad$day) %>% # create the day column
+  ggplot(mapping = aes(x = day, y = Seasonal168)) + # Seasonal168 contains 2nd seasonal (24*7 = 168)
+  geom_col() +
+  labs(title = "Seasonality Pattern Analysis",
+    subtitle = "Daily") +
+  theme(axis.text.y = element_blank()) # we're not interested in seasonal values
+```
+
+The plot above shows something interesting. It is completely different from the plot of first/one seasonality. This second seasonality plot is rather similar to the boxplot we've created earlier in the [dataset visualization](#vizdata). What can be interpreted from the plot above is that weekend tends to have more significant numbers than weekday.
+
+Now, let's combine both seasonalities and plot them together.
+
+```{r}
+# double seasonality plotted together
+
+as.data.frame(fnb_msts_dec) %>% # change data type to dataframe as ggplot only accepts dataframe
+  mutate(day = fnb_pad$day, # create the day column
+         hour = fnb_pad$hour) %>% # create the hour column
+  group_by(day, hour) %>% # group the data frame by day and hour
+  summarise(seasonal = sum(Seasonal24 + Seasonal168)) %>% # then create new column called seasonal whose content is the combination between 1st and 2nd seasonality
   ggplot(mapping = aes(x = hour, y = seasonal)) +
   geom_col(aes(fill = day)) +
   scale_fill_viridis_d(option = "plasma") +
-  labs(
-    title = "Seasonality Pattern Analysis",
-    subtitle = "Daily and Weekly"
-  )
+  labs(title = "Seasonality Pattern Analysis",
+    subtitle = "Hourly and Daily") +
+  theme(axis.text.y = element_blank()) # we're not interested in seasonal values
 ```
 
+The plot above is similar to the plot of first/one seasonality, but with more descriptions in daily information. Therefore, its interpretation is similar as well, but with an addition of the second seasonality plot interpretation.
 
-# Modelling
+# Modelling and Evaluation {#model}
 
-```{r}
-fnb_ts <- ts(data = fnb_pad$visitor, frequency = 24*7)
-autoplot(fnb_ts)
-```
+We've explored the dataset and its time series object. Now, let's move on to create the models and evaluate them. As explained earlier, we have two types of time series object, i.e. the one with one seasonality only and the one with two seasonalities. Here, we're going to examine both. First, let's examine the one with one seasonality only.
 
-```{r}
-fnb_dec <- decompose(x = fnb_ts, type = "additive")
-fnb_dec %>% autoplot()
-```
+## Modelling of One Seasonality
 
-```{r}
-hist(fnb_dec$random)
-shapiro.test(fnb_dec$random)
-```
+Firstly, we should check the assumptions. For time series, usually, there are three assumptions, i.e. normality of residuals, no-autocorrelation, and stationarity. However, as we're going to employ triple exponential smoothing (Holt Winters) and ARIMA/SARIMA and as mentioned [here](https://stats.stackexchange.com/questions/64911/does-the-holt-winters-algorithm-for-exponential-smoothing-in-time-series-modelli) and [here](https://stats.stackexchange.com/questions/79400/does-arima-require-normally-distributed-errors-or-normally-distributed-input-dat), we won't consider to use normality of residuals. We will just use no-autocorrelation and stationarity from now on.
+
+Now, let's check whether autocorrelation exists. We can use the `Box.test()` function. We expect to have p-value greater than 0.05.
 
 ```{r}
 Box.test(fnb_dec$random)
+
+diff(fnb_ts, lag = 2, differences = 9) %>% decompose(type = "additive") %>% 
+  autoplot()
+
+autoplot(diff(fnb_msts_dec[,5], lag = 2, differences = 3))
+
+aa <- diff(fnb_msts, lag = 2, differences = 4) %>% mstl()
+Box.test(aa[,4])
 ```
 
+The p-value is too far from our expectation. It means that our 
+
 ```{r}
-tseries::adf.test(x = fnb_ts)
+
 ```
+
+
+```{r}
+adf.test(x = fnb_ts)
+```
+
+Now, let's split the time series object into two parts, i.e. the train data and the validation data. We don't use the term of test data here as we reserve it for the final test. Since the aim of this article is to forecast 7 days, we're going to create the validation data with length of 7 days as well (24 x 7).
 
 ```{r}
 # split train-validation 1 seasonal
@@ -283,58 +336,79 @@ train <- head(fnb_ts, length(fnb_ts) - 24 * 7)
 validation <- tail(fnb_ts, 24 * 7)
 ```
 
+Now, let's create the model using triple exponential smoothing. We can use the `HoltWinters()` and `ets()` functions.
+
 ```{r}
 model_holt<- HoltWinters(train, seasonal = "additive")
-forecast_holt <- forecast::forecast(model_holt, h = 24 * 7)
-MLmetrics::MAE(y_pred = forecast_holt$mean, y_true = validation)
-TSstudio::plot_forecast(forecast_holt) #, title = "Model Complex Seasonality")
+
+model_ets <- ets(train, model = "ZZZ")
 ```
+
+Now, let's evaluate both models by forecasting the validation data and check their performance in MAE (Mean Absolute Error). Then, plot the results.
 
 ```{r}
-TSstudio::test_forecast(actual = fnb_ts, forecast.obj = forecast_holt,
-                        train = train, test = validation)
+forecast_holt <- forecast(model_holt, h = 24 * 7) # model HoltWinters
+forecast_ets <- forecast(model_ets, h = 24 * 7) # model ets
+
+# check MAE
+MAEoneHolt <- MAE(y_pred = forecast_holt$mean, y_true = validation)
+MAEoneHolt
+MAEoneETS <- MAE(y_pred = forecast_ets$mean, y_true = validation)
+MAEoneETS
+
+# plot the results
+plot_forecast(forecast_holt)
+plot_forecast(forecast_ets)
 ```
+
+We also can plot the results by including the train data.
 
 ```{r}
-model_arima <- forecast::auto.arima(train)
-forecast_arima <- forecast::forecast(model_arima, h = length(validation))
-TSstudio::plot_forecast(forecast_arima)
-MLmetrics::MAE(y_pred = forecast_arima$mean, y_true = validation)
-
-# ARIMA(2,0,2)(0,1,0)[168]
+test_forecast(actual = fnb_ts, forecast.obj = forecast_holt,
+              train = train, test = validation)
+test_forecast(actual = fnb_ts, forecast.obj = forecast_ets,
+              train = train, test = validation)
 ```
+
+We found that the model using `ets()` function performs superior in term of MAE. Then, by looking at their plot, the model using `HoltWinters()` function tends to increase the estimated results. Instead, the other tends to be flat.
+
+Now, let's use another model, i.e. ARIMA/SARIMA. We can use the `auto.arima()` function to find the best (by `forecast` library). However, before we employ ARIMA/SARIMA, we have to ensure that our data is stationary. We can check it by using `adf.test()` function. We expect to have p-value less than 0.05.
 
 ```{r}
-TSstudio::test_forecast(actual = fnb_ts, forecast.obj = forecast_arima,
-                        train = train, test = validation)
+adf.test(fnb_ts)
 ```
+
+We have nice p-value. Now, let's make the model.
+
+```{r}
+model_arima <- auto.arima(train)
+```
+
+Then, let's see the model's summary.
 
 ```{r}
 summary(model_arima)
 ```
 
-```{r}
-model_arimaTuned <- arima(train, order = c(2,0,2),
-                       seasonal = list(order = c(0,1,0), period = 24),
-                       method = "ML")
-forecast_arimaTuned <- forecast::forecast(model_arimaTuned, h = length(validation))
-TSstudio::plot_forecast(forecast_arimaTuned)
-MLmetrics::MAE(y_pred = forecast_arimaTuned$mean, y_true = validation)
-```
+In term of MAE, the model can perform small MAE. Now, let's use it to forecast the validation data.
 
 ```{r}
-TSstudio::test_forecast(actual = fnb_ts, forecast.obj = forecast_arimaTuned,
+forecast_arima <- forecast(model_arima, h = length(validation))
+MAEoneARIMA <- MAE(y_pred = forecast_arima$mean, y_true = validation)
+MAEoneARIMA
+plot_forecast(forecast_arima)
+# ARIMA(2,0,2)(0,1,0)[168]
+test_forecast(actual = fnb_ts, forecast.obj = forecast_arima,
                         train = train, test = validation)
 ```
 
+Eventhough the SARIMA model results in slightly worse MAE, if we its plot, it can follow the pattern of validation data better than the two models earlier.
 
-```{r}
-forecast::msts(data = fnb_pad$visitor, seasonal.periods = c(24, 24*7)) %>% 
-  forecast::mstl() %>% 
-  autoplot()
+## Modelling of Two Seasonalities
 
-fnb_msts <- forecast::msts(data = fnb_pad$visitor, seasonal.periods = c(24, 24*7))
-```
+As explained earlier that we have two types of time series object, we also consider two types of model, i.e. the model with single seasoanal and the model with multiple seasonal. We have discussed the one with single seasonal. Now, we're going to discuss the second type. As we have created the time series object for multiple seasonal, now let's split the data.
+
+Here, we also apply the same considerations as the one with single seasonality.
 
 ```{r}
 # split train-validation 2 seasonal
@@ -342,30 +416,43 @@ train_2 <- head(fnb_msts, length(fnb_msts) - 24 * 7)
 validation_2 <- tail(fnb_msts, 24 * 7)
 ```
 
+First, we're going to create the model using triple exponential smoothing approach.
+
 ```{r}
 model_holt_msts<- HoltWinters(train_2)
-forecast_holt2 <- forecast::forecast(model_holt_msts, h = 24 * 7)
-MLmetrics::MAE(y_pred = forecast_holt2$mean, y_true = validation_2)
-TSstudio::plot_forecast(forecast_holt2)
-```
+forecast_holt2 <- forecast(model_holt_msts, h = 24 * 7)
+MAEtwoHolt <- MAE(y_pred = forecast_holt2$mean, y_true = validation_2)
+MAEtwoHolt
 
-```{r}
-forecast_holt2$mean %>% autoplot(color = "blue") + 
-  autolayer(validation_2, color = "green")
-```
-
-```{r}
-TSstudio::test_forecast(actual = fnb_msts, forecast.obj = forecast_holt2,
+plot_forecast(forecast_holt2)
+test_forecast(actual = fnb_msts, forecast.obj = forecast_holt2,
                         train = train_2, test = validation_2)
 ```
 
+The Holt Winters model with multiple seasonality seems perform better. Its plot also show significance enhancement compared to when it only applies one seasonality.
+
+Now, let's create the ARIMA/SARIMA model for multiple seasonalities.
+
 ```{r}
-forecast::tsdisplay(fnb_msts, lag.max = 170)
+model_arima2 <- auto.arima(train_2)
+```
+
+Then, let's see the model's summary.
+
+```{r}
+summary(model_arima2)
 ```
 
 ```{r}
-arima(x = fnb_msts, order = c())
+forecast_arima2 <- forecast(model_arima, h = length(validation))
+MAEoneARIMA <- MAE(y_pred = forecast_arima$mean, y_true = validation)
+MAEoneARIMA
+plot_forecast(forecast_arima)
+# ARIMA(2,0,2)(0,1,0)[168]
+test_forecast(actual = fnb_ts, forecast.obj = forecast_arima,
+                        train = train, test = validation)
 ```
+
 
 ###### Test dataset using one seasonal
 
